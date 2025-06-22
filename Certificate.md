@@ -434,7 +434,12 @@ evil-winrm -i 10.10.11.71 -u 'Administrator' -H '*********************'
 ![image (2)](https://github.com/user-attachments/assets/43a4b3b9-22c8-4294-b9d4-69214c43f05c)
 
 
-tenemos el control total del sistema con la CA bajo nuestro poder!
+tenemos el control total del sistema con la CA bajo nuestro poder! esto nos permitiria muchas acciones maliciosas como firmar malware y asi evitar detección por políticas de restricción de software, includo podriamos inteceptar trafico cifrado si el cliente confia en la CA y tambien nos proporciona persistencia en el sistema sin depender de password 
+
+>> PD: Es posible extraer el Certificado porque anteriormente hemos explotado una vuelnerabilidad que nos permite tomar el control de `C:\` con el privilegio `SeManageVolumePrivilege`, esto ocurre asi ya
+>> que al extraer el certificado el comando `certutil -exportPFX ...` necesita crear archivos temporales en `C:\` necesarios para exportar la clave privada, asi como acceder a la clave privada sin
+>>  bloqueos causados por la falta de permisos de escritura y esto lo logramos gracias a tomar el control de `C:\`; es decir, sin explotar el fallo de seguridad previo a la extraccion del certificado no
+>> tendriamos exito
 
 
 
