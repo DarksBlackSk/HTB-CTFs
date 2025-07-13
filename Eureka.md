@@ -488,8 +488,8 @@ se a ejecutado el comando `id` y guardado en el archivo `/tmp/prueba.txt`. Sigui
 
 <img width="1918" height="228" alt="image" src="https://github.com/user-attachments/assets/86ef4659-7d65-4fec-9ed7-465186060edd" />
 
-pero en este punto ocurre un detalle y es que no podemos inyectar el comandos como cuando lo hicimos de forma manual, es decir, tipo: `Status: [$(...)]` porque no va a funcionar y esto pasa por la linea `if [[ "$existing_code" -eq "$code" ]]; then
-`, cuando `$code` llega a este punto su valor es exactamente `[...]` y el condicional `if` espera comparar enteros pero es interpretado como una expresion logica por lo que falla. Ahora para evitar esto podemos agregar cualquier caracter antes de la expresion `[...]` y Bash ejecuta $(...) en la etapa 1, sin problemas, por lo que no llega a la linea `if [[ "$existing_code" -eq "$code" ]]; then` con valor literal `x[...]` sino que ya a sido ejecutado antes el comando
+pero en este punto ocurre un detalle y es que no podemos inyectar el comandos como cuando lo hicimos de forma manual, es decir, tipo: `Status: [$(...)]`, y esto ocurre por la linea `if [[ "$existing_code" -eq "$code" ]]; then`.
+En ambos casos `code="[$(...)]"` & `code="a[$(...)]"`; `$code` llegan hasta el condicional `if` de forma literal, pero bash interpreta `$code` de forma distinta para cada caso, en el caso donde `$code="[$(...)]"` bash no expande `$(...)` ya que lo interpreta como un string y para el caso donde `code="a[$(...)]"` bash lo interpreta como: Un literal `x` + un globbing pattern ([$(whoami)]) por lo que en este caso primero expande `$(...)` que es donde ocurre la ejecucion de comandos, luego de expandir, el condicional realiza la comparacion `-eq` y tambien falla pero ya se a ejecuto el comando. Solucion: agregar un caracter antes de `[...]` para que quede: `x[$(...comando...)]`
 
 asi que primero eliminamos el archivo y lo volvemos a crear inyectando una linea con un comandos malicioso para que sea ejecutado por `root`
 
